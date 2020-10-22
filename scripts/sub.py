@@ -21,19 +21,20 @@ class Vertx:
 
 class Edge:
 
-    def __init__(self, edge_id=0, source=0, target=-1, line=[], length=0, ray='False'):
+    def __init__(self, edge_id=0, source=0, target=-1, line=[], length=0, width=1):
         self.edge_id = edge_id
         self.source = source
         self.target = target
         self.line = line
         self.length = length
-        self.ray = ray
+        self.width = width
 
 
 def callback(msg):
 
     vd = msg.vertices
     # create list of nodes
+     # create list of nodes
     VertxArray = []
     for i in range(len(vd)):
         v = Vertx(node_id=i, pos=vd[i].path[0], degree=0, width=vd[i].width, edges=[])
@@ -43,15 +44,17 @@ def callback(msg):
     VertxArray_unq = []
     positions = []
     # delete multiple vertices with same position
-    for i in range(len(VertxArray)):
-        if VertxArray[i].pos not in positions:
-            VertxArray_unq.append(VertxArray[i])
-            positions.append(VertxArray[i].pos)
+    for i in VertxArray:
+        if i.pos not in positions:
+            VertxArray_unq.append(i)
+            positions.append(i.pos)
 
     EdgesArray = []
-    for i in range(len(vd)):  
+    max_len = len(VertxArray_unq)
+    k = 0
+    for i in range(len(vd)):
         # we iterate at vd because we want all the edges
-        e = Edge(edge_id=i, source=0, target=-1, line=vd[i].path, length=0, ray=False)
+        e = Edge(edge_id=i, source=0, target=-1, line=vd[i].path, length=0, width=vd[i].width)
 
         # find start of nodes
         e.source = [x.node_id for x in VertxArray_unq if x.pos == vd[i].path[0]][0]
@@ -59,13 +62,16 @@ def callback(msg):
         # find node_id that corresponds to the end of the edge
         e.target = [x.node_id for x in VertxArray_unq if x.pos == vd[i].path[-1]]
 
-        # if at the end there is no vertex, it is a ray
-        if e.target == []:
-            e.target = -1
-            e.ray = True
+        # if at the end there is no vertex, create a vertex
+        if not e.target:
+            k += 1
+            v = Vertx(node_id=max_len + k, pos=e.line[-1], degree=1, width=1, edges=[])
+            e.target = v.node_id
+            VertxArray_unq.append(v)
+            del v
         else:
             e.target = e.target[0]
-        
+
         # find length of edge
         xcoords, ycoords = [], []
         for j in range(len(vd[i].path)):
@@ -83,102 +89,97 @@ def callback(msg):
     for i in VertxArray_unq:
         i.edges = [x.edge_id for x in EdgesArray if x.line[0] == i.pos or x.line[-1] == i.pos]
         i.degree = len(i.edges)
-        
-
-    # eliminate vertices that are the ends of two rays
-    rays = [x for x in EdgesArray if x.ray]
-
-    for i, j in combinations(range(len(rays)), 2):
-        # if two rays are juncted, there is no node
-        if i != j:
-            point = EdgesArray[i].line[-1]
-            p = [x for x in EdgesArray if x.line[-1]== point or x.line[0]== point]
-            if point == EdgesArray[j].line[-1] and not p:
-                # we add its path to the second, reversed
-                edge_ = EdgesArray[i]
-                s = edge_.source
-                vtx_ = [x for x in VertxArray_unq if x.node_id == s][0]
-                EdgesArray[j].line += reversed(edge_.line[:-1])
-                # we go to deleted edge's source, and delete it as edge
-                vtx_.edges.remove(edge_.edge_id)
-                if EdgesArray[j].edge_id not in vtx_.edges:
-                    vtx_.edges.append(EdgesArray[j].edge_id)
-                else:
-                    vtx_.degree -= 1
-                # we delete the first edge
-                edge_.edge_id = -10
-
-    EdgesArray = [x for x in EdgesArray if x.edge_id != -10]
 
 
     # algorithm 1:-Filter with obstacle distance
-    td = 0.01
-    VertxArray_unq = [x for x in VertxArray_unq if x.width > td]
+    td = 0.5
+    e1 = [x for x in EdgesArray if x.width > td]
+
+    # find degree - edges that start or end in a vertex
+    for i in VertxArray_unq:
+        i.edges = [x.edge_id for x in e1 if x.line[0] == i.pos or x.line[-1] == i.pos]
+        i.degree = len(i.edges)
+
+    VD0 = {'Vertices': VertxArray_unq, 'Edges': EdgesArray}
+    VD1 = {'Vertices': VertxArray_unq, 'Edges': e1}
 
     # algorithm 2: Skipping vertices
-    vd1, vd2 = [], []
+    v0 = []  # vertices to keep
     for i in VertxArray_unq:
-        if i.degree == 0:
-            vd1.append(i)
-            # continue
-        if i.degree == 2:
-            # if none of the edges are rays, skip the vertex
-            if (not EdgesArray[i.edges[0]].ray) and (not EdgesArray[i.edges[1]].ray):
-                vd1.append(i)
-                # continue
-        vd2.append(i)
+        if i.degree == 1 or i.degree > 2:
+            v0.append(i)
+    # vertices to skip
+    v_skipped = [x for x in VertxArray_unq if x not in v0]  # V^VD1\v0
 
-    E  = []
-    for i in range(len(VertxArray_unq)):
-        e_curr = EdgesArray[VertxArray_unq[i].edges[0]]
-        v_curr = VertxArray_unq[i]
-        l_sum = 0
-        e_new = Edge(edge_id=i, source=VertxArray_unq[i].node_id, target=-1, line=[], length=0, ray=False)
-        while True:
-            l_sum += e_curr.length
-            e_new.line.append(v_curr.pos)
+    def skipping_edges(ver, edges, v0):
 
-            # go to the node in the end of the edge
-            v_next = [x for x in VertxArray_unq if x.node_id == e_curr.target][0]
-            e_new.target = v_next.node_id
-            next_pos = v_next.pos
+        """
+        :param ver: all vertices
+        :param edges: all edges
+        :param v0: nodes with degree != 2
+        :return: E: new edges
+        """
 
-            if v_next.degree != 2:
-                print('Broke because degree diff from 2', i)
-                break
+        ids_gone = []
+        E, already_visited = [], []
+        for i in range(len(edges)):
+            e_curr = edges[i]
+            if e_curr.edge_id in ids_gone:
+                continue
+            p1 = e_curr.source
+            # if e_curr starts from a deleted node, skip
+            while True:
+                # find if e_curr starts from a node with deg != 2
+                src = [x for x in v0 if x.node_id == p1]
+                # if it doesnt, it means its src has 2 edges, we go to the other one
+                if not src:
+                    p1_node = [x for x in ver if x.node_id == p1][0]
+                    # go to the next edge
+                    e_curr = [x for x in edges if x.edge_id in p1_node.edges and x != e_curr][0]
+                    # [value_false, value_true][<test>]
+                    # if the source of the edges is the same, go to the other target node
+                    p1 = [e_curr.source, e_curr.target][p1 == e_curr.source]
+                else:
+                    break
+            v_curr = [x for x in ver if x.node_id == p1][0]  # p1_node
+            l_sum = 0
+            e_new = Edge(edge_id=e_curr.edge_id, source=v_curr.node_id, target=-1, line=[], length=0)
+            while True:
+                l_sum += e_curr.length
+                ids_gone.append(e_curr.edge_id)
+                e_new.line.extend(e_curr.line)
+                # find next vertex that is on the edge and it not the current
+                # it searches in ver because some edges might end in vertices that are skipped
+                v_next = [x for x in ver if e_curr.edge_id in x.edges and x != v_curr][0]
+                if v_next.degree != 2:
+                    break
+                # find the other edge of v_next
+                e_next = [x for x in edges if x.edge_id in v_next.edges and x != e_curr][0]
+                e_curr = e_next
+                v_curr = v_next
+            e_new.line.extend(e_curr.line)
+            e_new.length = l_sum
+            E.append(e_new)
+            del e_new
+        return E
 
-            # the vertex has only two edges - go to the other edge
-            i_next = [j for j in v_next.edges if j != VertxArray_unq[i].node_id][0]
-
-            e_next = [e for e in EdgesArray if e.edge_id == i_next][0]
-            if e_next.ray:
-                print('Broke because of ray', i)
-                break
-
-            e_curr = e_next
-            v_curr = v_next
-        e_new.line.append(next_pos)
-        e_new.length = l_sum
-        E.append(e_new)
-        del e_new
-
-   
-    E = EdgesArray
-
+    e2 = skipping_edges(VD1['Vertices'], VD1['Edges'], v0)
+    VD2 = {'Vertices': v0, 'Edges': e2}
+    # skipping_edges(VD1['Vertices'], VD1['Edges'], v0)
+    print('done, lets go convert back')
+    # convert back to Graph msg
     v_msg = []
-    for i in range(len(E)):
+    vor = VD2
+    for i in range(len(vor['Edges'])):
         # msg : id, valid, path, suc, pred, width, weight
         # vtx:  node_id=np.nan, pos=(0, 0), degree=0, width=0, edges=[])
         # edge :edge_id=0, source=0, target=-1, line=[], length=0, ray='False'):
-        v = Vertex(i, True, [], [], [], 0,0)
-        s_node = [x for x in VertxArray_unq if x.node_id == E[i].source][0]
-        if not E[i].ray:
-            t_node = [x for x in VertxArray_unq if x.node_id == E[i].target][0]
-            v.successors = [s_node.edges, t_node.edges]
-        else:
-            v.successors = s_node.edges
+        v = Vertex(i, True, [], [], [], 0, 0)
+        s_node = [x for x in vor['Vertices'] if x.node_id == vor['Edges'][i].source][0]
 
-        v.path = E[i].line
+        v.successors = s_node.edges
+
+        v.path = vor['Edges'][i].line
         v.width = s_node.width
         v.weight = 1
         v.predecessors = []

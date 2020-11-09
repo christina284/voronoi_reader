@@ -55,6 +55,8 @@ find_package(catkin REQUIRED COMPONENTS
    Edges.msg
    VertxArray.msg
    EdgesArray.msg
+   PointList.msg
+   Segment_msg.msg
  )
 
 ## Generate services in the 'srv' folder
@@ -139,7 +141,7 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-# add_executable(${PROJECT_NAME}_node src/voronoi_reader_node.cpp)
+add_executable(alpha_shape scripts/alpha_shape.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -149,11 +151,12 @@ include_directories(
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(${PROJECT_NAME}_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(alpha_shape voronoi_reader_generate_messages_cpp} 
+# ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-# target_link_libraries(${PROJECT_NAME}_node
-#   ${catkin_LIBRARIES}
+# target_link_libraries(alpha_shape
+#  ${catkin_LIBRARIES}
 # )
 
 #############
@@ -167,6 +170,8 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
  catkin_install_python(PROGRAMS
    scripts/sub.py
+   scripts/Get_map_server.py
+   scripts/get_map_client.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 

@@ -141,7 +141,7 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-add_executable(alpha_shape scripts/alpha_shape.cpp)
+add_executable(polygon_interactive scripts/polygon_interactive.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
@@ -151,13 +151,13 @@ add_executable(alpha_shape scripts/alpha_shape.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(alpha_shape voronoi_reader_generate_messages_cpp} 
+# add_dependencies(polygon_interactive voronoi_reader_generate_messages_cpp} 
 # ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-# target_link_libraries(alpha_shape
-#  ${catkin_LIBRARIES}
-# )
+ target_link_libraries(polygon_interactive
+  ${catkin_LIBRARIES}
+ )
 
 #############
 ## Install ##
@@ -172,6 +172,7 @@ add_executable(alpha_shape scripts/alpha_shape.cpp)
    scripts/sub.py
    scripts/Get_map_server.py
    scripts/get_map_client.py
+   scripts/polygon_interactive1.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 

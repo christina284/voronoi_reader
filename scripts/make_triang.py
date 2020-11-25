@@ -118,38 +118,16 @@ def make_triang(img, ver, outline, corners):
             else:
                 large_edges.add((edge_idx0, edge_idx1))
 
-    plt.figure()
-    plt.plot(z[:, 0], z[:, 1], '.')
-    for i, j in small_edges:
- 
-        plt.plot(z[[i, j], 0], z[[i, j], 1], 'red')
-
-    # for i, j in large_edges:
-    #     plt.plot(z[[i, j], 0], z[[i, j], 1], 'black')
-
-    plt.show()
-    # triangle.compare(plt, tri, data)
-    # plt.show()
-    (w, h, z1) = img.shape
-    z = z.astype(int)
-    # new_img = np.zeros((w, h), dtype=np.uint8)
-    # for i in range(len(z[:, 0])):
-    #     new_img[z[i, 1], z[i, 0]] = 1
-
+    # plt.figure()
+    # plt.plot(z[:, 0], z[:, 1], '.')
     # for i, j in small_edges:
-    #     new_img[z[[i, j], 1], z[[i, j], 0]] = 1
+ 
+    #     plt.plot(z[[i, j], 0], z[[i, j], 1], 'red')
 
+    # # for i, j in large_edges:
+    # #     plt.plot(z[[i, j], 0], z[[i, j], 1], 'black')
 
-    # find contour
-
-    centers = []
-    z = np.array(z)
-    # for i in tri['triangles']:
-    #     centers.append(np.sum(z[i], axis=0, dtype='int') / 3.0)
-    # colors = np.array([(x - w / 2.) ** 2 + (y - h / 2.) ** 2 for x, y in centers])
-    # plt.tripcolor(z[:, 0], z[:, 1], tri['triangles'].copy(), facecolors=colors, edgecolors='k')
-    # plt.gca().set_aspect('equal')
     # plt.show()
-    print('end')
-    return tri
+    
+    return z, small_edges
 

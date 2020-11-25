@@ -119,9 +119,84 @@ def callback(msg):
 
     VD2 = VD2_1.copy()
 
+
+    # take map from service
+    print('Waiting for service....')
+    rospy.wait_for_service('static_map')
+
+    try:
+        stc_map = rospy.ServiceProxy('static_map', GetMap)
+        print('Service called')
+
+    except rospy.ServiceException:
+        print('Service call failed')
+
+    p =  stc_map()
+
+    # edit map and find outer shape
+    tmp = np.array(p.map.data)
+    map_ = np.reshape(tmp, (p.map.info.height, p.map.info.width))
+    kernel = np.ones((5, 5), np.uint8) 
+    map_ = np.float32(map_)
+    img_dilation = cv2.dilate(map_, kernel, iterations=1) 
+    img_erosion = cv2.erode(img_dilation, kernel, iterations=1) 
+
+    # map_ = map_ > 0
+    img = map_.astype(np.uint8)
+    cv2.imwrite('/home/chris/Desktop/map.jpg', map_)
+    corners, _ = find_corners(img_erosion, False)
+
+    walls = np.where(img_dilation == 100)
+    idx_walls = list(zip(*walls))
+    corners = np.flip(corners, axis=1)
+    corners = list(map(tuple, corners))
+    cn = [(x[0], x[1]) for x in corners if x in idx_walls]
+    print('found ', len(cn), 'corners in map')
+
+
+    x_ = [x[1] for x in cn]
+    y_ = [x[0] for x in cn]
+
+    # visualize edges_on_map
+    # implot = plt.imshow(map_)
+    # # for i in range(len(edges_on_map)):
+    # #     plt.plot(*np.array(edges_on_map[i]).T)
+    # plt.scatter(x=walls[1], y=walls[0], c='b', s=2)
+    # plt.scatter(x_, y_, c='r', s =4)
+    # plt.show()
+
+    # delete "duplicate lines", eg there are lines like AB,BC, AC, delete AC
+    # for every line (AB), go to the "beggining" node (A), and find all lines getting out of it (A~)  
+    # for every line that gets out of it, we find its other end node (C)
+    # for this node, find again all lines (C~)
+    # lines = find_outline(cn, idx_walls)
+  
+
+    # with open('lines.pkl', 'wb') as f:
+    #     pickle.dump(lines, f)
+    # A -----C----------B
+    with open('lines.pkl', 'rb') as f:
+        lines = pickle.load(f)     
+
+
+    # for l in lines:
+    #     point1 = cn[l[0]]
+    #     point2 = cn[l[1]]
+    #     x_values = [point1[0], point2[0]]
+
+    #     y_values = [point1[1], point2[1]]
+    #     plt.plot(x_values, y_values)
+    # # plt.scatter(x=walls[1], y=walls[0], c='b', s=2)
+    # # plt.scatter(x_, y_, c='r', s =4)
+    # plt.show()
+
+    lines_as_points = [[Point( cn[x[0]][0],  cn[x[0]][1] ), Point( cn[x[1]][0],  cn[x[1]][1] ) ] for x in lines]
+
+    print('done with outline')
+
    
     # algorithm 5
-    v3, e3 = vertex_merging(VD2['Vertices'], VD2['Edges'], vertex_merging_thresh)
+    v3, e3 = vertex_merging(VD2['Vertices'], VD2['Edges'], vertex_merging_thresh, lines_as_points)
     VD3_1 = {'Vertices': v3, 'Edges': e3}   # graph after merging vertices  
 
     v2_msg13 = convert_back(VD3_1)
@@ -158,171 +233,15 @@ def callback(msg):
     pickle.dump(pointz, open("/home/chris/Desktop/pts.pkl", "wb"))
 
 
-    # take map from service
-    print('Waiting for service....')
-    rospy.wait_for_service('static_map')
 
-    try:
-        stc_map = rospy.ServiceProxy('static_map', GetMap)
-        print('Service called')
 
-    except rospy.ServiceException:
-        print('Service call failed')
+    tr_ver, tr_edg = make_triang(map_, pointz, lines, cn)
 
-    p =  stc_map()
-
-    # edit map and find outer shape
-    tmp = np.array(p.map.data)
-    map_ = np.reshape(tmp, (p.map.info.height, p.map.info.width))
-    kernel = np.ones((5, 5), np.uint8) 
-    map_ = np.float32(map_)
-    img_dilation = cv2.dilate(map_, kernel, iterations=1) 
-    img_erosion = cv2.erode(img_dilation, kernel, iterations=1) 
-    # img_dilation = cv2.dilate(img_erosion, kernel, iterations=1) 
-    # img_erosion = cv2.dilate(img_dilation, kernel, iterations=1) 
-
-    # map_ = map_ > 0
-    img = map_.astype(np.uint8)
-    cv2.imwrite('/home/chris/Desktop/map.jpg', map_)
-    # triangs = make_triang(img, pointz)  # should change the corners 
-    corners, _ = find_corners(img_erosion, False)
     current_dict = VD4
-    # cv2.imshow('g', img_erosion)
-    # cv2.waitKey(0)
-    def map_on_map(curr_dict):
-        # x_offset = msg.origin.position.x
-        # y_offset = msg.origin.position.y
-        x_offset = 0
-        y_offset = 0
-        res = 0.05
-        v_on_map = [(x.pos.x/res + x_offset, x.pos.y/res + y_offset) for x in curr_dict['Vertices']]
-        edges_on_map = [ [((i.x/res - x_offset), (i.y/res - y_offset)) for i in ej.line ] for ej in curr_dict['Edges'] ]
-        return v_on_map, edges_on_map
+
+
 
     v_on_map, edges_on_map = map_on_map(current_dict)
-    walls = np.where(img_dilation == 100)
-    idx_walls = list(zip(*walls))
-    corners = np.flip(corners, axis=1)
-    corners = list(map(tuple, corners))
-    cn = [(x[0], x[1]) for x in corners if x in idx_walls]
-    print('found ', len(cn), 'corners in map')
-
-
-    x_ = [x[1] for x in cn]
-    y_ = [x[0] for x in cn]
-
-    # visualize edges_on_map
-    # implot = plt.imshow(map_)
-    # # for i in range(len(edges_on_map)):
-    # #     plt.plot(*np.array(edges_on_map[i]).T)
-    # plt.scatter(x=walls[1], y=walls[0], c='b', s=2)
-    # plt.scatter(x_, y_, c='r', s =4)
-    # plt.show()
-
-
-
-    def find_interm(p1, p2):
-        ps = intermediates(Point(p1[0], p1[1]), Point(p2[0], p2[1]), 50)
-        ps = [(int(o.x), int(o.y)) for o in ps]
-        return ps
-
-
-    # find outline
-    empty_ar = np.zeros(map_.T.shape)
-    it = 1
-    it_size = len(list(itertools.combinations(cn, 2)))
-    lines = []
-    for i, j in itertools.combinations(cn, 2):
-
-        t1= time.time()
-        ppts = []
-        ps = find_interm(i, j)
-
-        ppts = [x for x in ps if x in idx_walls]
-        R = 0
-        it +=1
-        if len(ppts)==1*len(ps):
-            # cv2.line(empty_ar, i, j, (255,255,255), 1) 
-            lines.append([cn.index(i), cn.index(j)])
-        t2 = time.time()
-        time_per_it = (t2-t1)/60 # in mins
-        time_whole = time_per_it * it_size
-        print("iteration ", it, "/", it_size, 'mins left: ', time_whole - it*time_per_it)
-
-    lines_2 = lines
-    for l in lines:
-        A = l[0]
-        B = l[1]
-        # print(['A ', A, 'B ', B])
-        lines_with_A = []
-        for l1 in [x for x in lines if x not in [l]]:
-            if l1[0] == A or l1[1] == A:
-                lines_with_A.append(l1)
-                # print(['lines with A ', lines_with_A])
-        for l2 in lines_with_A:
-            C = [x for x in l2 if x not in [A]][0]  # find the other corner
-            for l3 in lines:
-                if l3[0] == C or l3[1] == C:
-                    # print(['this is lines with C ', l3, ' <--------'])
-                    other_corner_of_c = [x for x in l3 if x not in [C, [A]]]
-                    if other_corner_of_c[0] == B:
-                        # print('A and B are uselless because line l3 connects them ')
-                        # print('l ', l, 'line w/ A ', l2, 'line w/ B', l3)
-                        AB = [Point(cn[A][0], cn[A][1]), Point(cn[B][0], cn[B][1])]
-                        AC = [Point(cn[A][0], cn[A][1]), Point(cn[C][0], cn[C][1])]
-                        BC = [Point(cn[C][0], cn[C][1]), Point(cn[B][0], cn[B][1])]
-                        dAB = comp_dist(AB)
-                        dAC = comp_dist(AC)
-                        dBC = comp_dist(BC)
-                        max_len = max([dAB, dAC, dBC])
-                        if dAB == max_len:
-                            to_del = l
-                        elif dAC == max_len:
-                            to_del = l2
-                        else:
-                            to_del = l3
-                        lines_2 = [x for x in lines_2 if x != to_del]
-                    
-            
-
-
-    # cv2.imshow('g', empty_ar)
-    # cv2.waitKey(0)
-
-    with open('lines.pkl', 'wb') as f:
-        pickle.dump(lines_2, f)
-    # A -----C----------B
-    with open('lines.pkl', 'rb') as f:
-        lines_2 = pickle.load(f)     
-
-
-
-    # delete "duplicate lines", eg there are lines like AB,BC, AC, delete AC
-    # for every line (AB), go to the "beggining" node (A), and find all lines getting out of it (A~)  
-    # for every line that gets out of it, we find its other end node (C)
-    # for this node, find again all lines (C~)
-    
-  
-
-    print('done with outline')
-
-    for l in lines_2:
-        point1 = cn[l[0]]
-        point2 = cn[l[1]]
-        x_values = [point1[0], point2[0]]
-
-        y_values = [point1[1], point2[1]]
-        plt.plot(x_values, y_values)
-    # plt.scatter(x=walls[1], y=walls[0], c='b', s=2)
-    # plt.scatter(x_, y_, c='r', s =4)
-    plt.show()
-    tri = make_triang(map_, pointz, lines_2, cn)
-
-
-
-
-
-
 
     print("MarkerArray creation")
     ma = MarkerArray()

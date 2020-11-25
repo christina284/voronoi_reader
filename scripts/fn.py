@@ -6,7 +6,9 @@ import copy
 import rospy
 from tuw_multi_robot_msgs.msg import Graph, Vertex
 from geometry_msgs.msg import Point
-
+import itertools
+import time
+from shapely.geometry import LineString
 
 class Vertx:
     def __init__(self, node_id=np.nan, pos=(0, 0), degree=0, width=0, edges=[]):
@@ -116,15 +118,21 @@ def intermediates(p1, p2, parts):
     return path
 
 
-def vertex_merging(ver, edges, sigma):
+def ShapelyIntersect(A,B,C,D):
+    return LineString([(A.x,A.y),(B.x,B.y)]).intersects(LineString([(C.x,C.y),(D.x,D.y)]))
+
+def vertex_merging(ver, edges, sigma, outline):
     print('merging vertices..')
     for e in edges:
         if e.length < sigma:
+
+
             # merge source and target
             n1 = [x for x in ver if x.node_id == e.source][0]
             n2 = [x for x in ver if x.node_id == e.target][0]
             pos_of_scs = n1.pos
             pos_of_tgt = n2.pos
+
             # find their middlepoint
             midpoint = Point((pos_of_scs.x+pos_of_tgt.x)/2, (pos_of_scs.y+pos_of_tgt.y)/2, 0.0)
 
@@ -134,9 +142,33 @@ def vertex_merging(ver, edges, sigma):
             # find edges of nodes by their ids
             edges_ = [x for x in edges if x.edge_id in edges_ if x != e]
 
-            # find which edges starts or ends in the deleted vertices
+
+            # find which edges start or end in the deleted vertices
             targs = [x for x in edges_ if x.target == n1.node_id or x.target == n2.node_id]
             scs = [x for x in edges_ if x.source == n1.node_id or x.source == n2.node_id]
+
+            # find if these edges intersect with outline
+            inters_flag = False
+            for i in targs:
+                p11 =  midpoint
+                p12 = [x for x in ver if x.node_id == i.source][0].pos
+                for l in outline:
+                    p21 = l[0]
+                    p22 = l[1]
+                    if ShapelyIntersect(p11, p22, p21, p22):
+                        inters_flag = True
+            for i in scs:
+                p11 =  midpoint
+                p12 = [x for x in ver if x.node_id == i.target][0].pos
+                for l in outline:
+                    p21 = l[0]
+                    p22 = l[1]
+                    if ShapelyIntersect(p11, p22, p21, p22):
+                        inters_flag = True
+                        
+            # if it intersects with outline, dont go on with the merge
+            if inters_flag:
+                continue
             # let the new node have the node_id of n1 (source of edge w/ len<sigma)
             # we change targets and sources of edges of the nodes to be merged
             for k in targs:
@@ -148,7 +180,6 @@ def vertex_merging(ver, edges, sigma):
             ver = [x for x in ver if x not in [n1, n2]]
             edges = [x for x in edges if x != e]
             # create new node
-            print('ver',len(ver), 'edg',len(edges))
             new_node = Vertx(node_id=n1.node_id, edges=[x.edge_id for x in edges_],
                                 degree=len(edges_), pos=midpoint, width=0)
             ver.extend([new_node])
@@ -224,3 +255,75 @@ def comp_dist(path):
         sum_dist += np.sqrt((xcoords[k + 1] - xcoords[k])
                             ** 2 + (ycoords[k + 1] - ycoords[k]) ** 2)
     return sum_dist
+
+def find_interm(p1, p2):
+    ps = intermediates(Point(p1[0], p1[1], 0), Point(p2[0], p2[1], 0), 50)
+    ps = [(int(o.x), int(o.y)) for o in ps]
+    return ps
+
+
+# find outline
+def find_outline(cn, idx_walls):
+    it = 1
+    it_size = len(list(itertools.combinations(cn, 2)))
+    lines = []
+    for i, j in itertools.combinations(cn, 2):
+
+        t1= time.time()
+        ppts = []
+        ps = find_interm(i, j)
+
+        ppts = [x for x in ps if x in idx_walls]
+        R = 0
+        it +=1
+        if len(ppts)==1*len(ps):
+            lines.append([cn.index(i), cn.index(j)])
+        t2 = time.time()
+        time_per_it = (t2-t1)/60 # in mins
+        time_whole = time_per_it * it_size
+        print("iteration ", it, "/", it_size, 'mins left: ', time_whole - it*time_per_it)
+
+    lines_2 = lines
+    for l in lines:
+        A = l[0]
+        B = l[1]
+        # print(['A ', A, 'B ', B])
+        lines_with_A = []
+        for l1 in [x for x in lines if x not in [l]]:
+            if l1[0] == A or l1[1] == A:
+                lines_with_A.append(l1)
+                # print(['lines with A ', lines_with_A])
+        for l2 in lines_with_A:
+            C = [x for x in l2 if x not in [A]][0]  # find the other corner
+            for l3 in lines:
+                if l3[0] == C or l3[1] == C:
+                    # print(['this is lines with C ', l3, ' <--------'])
+                    other_corner_of_c = [x for x in l3 if x not in [C, [A]]]
+                    if other_corner_of_c[0] == B:
+                        # print('A and B are uselless because line l3 connects them ')
+                        # print('l ', l, 'line w/ A ', l2, 'line w/ B', l3)
+                        AB = [Point(cn[A][0], cn[A][1], 0), Point(cn[B][0], cn[B][1], 0)]
+                        AC = [Point(cn[A][0], cn[A][1], 0), Point(cn[C][0], cn[C][1], 0)]
+                        BC = [Point(cn[C][0], cn[C][1], 0), Point(cn[B][0], cn[B][1], 0)]
+                        dAB = comp_dist(AB)
+                        dAC = comp_dist(AC)
+                        dBC = comp_dist(BC)
+                        max_len = max([dAB, dAC, dBC])
+                        if dAB == max_len:
+                            to_del = l
+                        elif dAC == max_len:
+                            to_del = l2
+                        else:
+                            to_del = l3
+                        lines_2 = [x for x in lines_2 if x != to_del]
+    return lines_2
+
+def map_on_map(curr_dict):
+    # x_offset = msg.origin.position.x
+    # y_offset = msg.origin.position.y
+    x_offset = 0
+    y_offset = 0
+    res = 0.05
+    v_on_map = [(x.pos.x/res + x_offset, x.pos.y/res + y_offset) for x in curr_dict['Vertices']]
+    edges_on_map = [ [((i.x/res - x_offset), (i.y/res - y_offset)) for i in ej.line ] for ej in curr_dict['Edges'] ]
+    return v_on_map, edges_on_map
